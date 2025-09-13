@@ -35,12 +35,21 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/flows", flowRoutes);
 app.use("/api/businesses", businessRoutes);
 
-// Health check endpoint
+// Health check endpoint (GET request for manual testing)
 app.get("/health", (req, res) => {
   res.status(200).json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    service: "WhatsApp Flow Data Endpoint",
+    data: {
+      status: "active",
+    },
+  });
+});
+
+// Meta Flow Health Check endpoint (GET request for manual testing)
+app.get("/ping", (req, res) => {
+  res.status(200).json({
+    data: {
+      status: "active",
+    },
   });
 });
 

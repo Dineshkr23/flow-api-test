@@ -359,23 +359,30 @@ router.post(
   }
 );
 
-// Health check endpoint for Meta Flow requirements
+// Health check endpoint for Meta Flow requirements (GET request for manual testing)
 router.get("/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "Flow Data Endpoint is healthy",
-    timestamp: new Date().toISOString(),
-    version: "1.0.0",
+  res.status(200).json({
+    data: {
+      status: "active",
+    },
   });
 });
 
-// Root health check endpoint (alternative path)
+// Root health check endpoint (alternative path for manual testing)
 router.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "Flow Data Endpoint is healthy",
-    timestamp: new Date().toISOString(),
-    version: "1.0.0",
+  res.status(200).json({
+    data: {
+      status: "active",
+    },
+  });
+});
+
+// Meta Flow Health Check endpoint (GET request for manual testing)
+router.get("/ping", (req, res) => {
+  res.status(200).json({
+    data: {
+      status: "active",
+    },
   });
 });
 

@@ -60,6 +60,9 @@ const processFlowAction = async ({
           payload,
         });
 
+      case "ping":
+        return await handlePingAction();
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -237,6 +240,22 @@ const handleCompleteAction = async ({
     },
     session_id: session_id,
   };
+};
+
+const handlePingAction = async () => {
+  try {
+    console.log("🏓 Processing PING action (health check)");
+
+    // Return the health check response as required by Meta
+    return {
+      data: {
+        status: "active",
+      },
+    };
+  } catch (error) {
+    console.error("Error handling PING action:", error);
+    throw error;
+  }
 };
 
 /**
