@@ -7,11 +7,15 @@ const {
 const {
   getBusinessPrivateKey,
   getBusinessAppSecret,
+  getBusiness,
+  getBusinessWithCredentials,
+  uploadPublicKeyToMeta,
 } = require("../services/businessService");
 const Flow = require("../models/Flow");
 const FlowData = require("../models/FlowData");
 const FlowSession = require("../models/FlowSession");
 const FlowResponse = require("../models/FlowResponse");
+const Business = require("../models/Business");
 
 const router = express.Router();
 
@@ -25,23 +29,69 @@ router.post("/data-endpoint", async (req, res) => {
       req.body.initial_vector
     ) {
       // Encrypted request from Meta - need to determine business from request
-      const businessId = req.headers["x-business-id"] || req.body.business_id;
-
-      if (!businessId) {
-        return res.status(400).json({
-          error: "Business ID required",
-          message: "Business ID must be provided in headers or request body",
-        });
-      }
+      // Meta doesn't send business_id, so we need to try decrypting with all businesses
+      console.log(
+        "🔐 Received encrypted request from Meta - attempting to identify business"
+      );
 
       try {
-        const privateKeyPem = await getBusinessPrivateKey(businessId);
-        const appSecret = await getBusinessAppSecret(businessId);
+        // Get all businesses with public keys uploaded
+        const businesses = await Business.find({
+          public_key_uploaded: true,
+          access_token: { $exists: true, $ne: null },
+          private_key: { $exists: true, $ne: null },
+        });
 
-        const encryptedResponse = await processEncryptedFlowRequest(
-          req,
-          privateKeyPem,
-          appSecret
+        if (businesses.length === 0) {
+          return res.status(500).json({
+            error: "No businesses configured",
+            message: "No businesses found with public keys uploaded",
+          });
+        }
+
+        let decryptionSuccessful = false;
+        let encryptedResponse = null;
+        let successfulBusiness = null;
+
+        // Try to decrypt with each business's private key
+        for (const business of businesses) {
+          try {
+            console.log(
+              `🔑 Attempting decryption with business: ${business.id}`
+            );
+
+            const encryptedResponse = await processEncryptedFlowRequest(
+              req,
+              business.private_key,
+              business.app_secret
+            );
+
+            decryptionSuccessful = true;
+            successfulBusiness = business;
+            console.log(
+              `✅ Successfully decrypted with business: ${business.id}`
+            );
+            break;
+          } catch (decryptError) {
+            console.log(
+              `❌ Failed to decrypt with business ${business.id}:`,
+              decryptError.message
+            );
+            continue;
+          }
+        }
+
+        if (!decryptionSuccessful) {
+          console.error("❌ Failed to decrypt with any business");
+          return res.status(421).json({
+            error: "Decryption failed",
+            message:
+              "Unable to decrypt request with any available business key",
+          });
+        }
+
+        console.log(
+          `🎯 Successfully processed request for business: ${successfulBusiness.id}`
         );
 
         // Send encrypted response as plain text (not JSON)
@@ -98,6 +148,54 @@ router.post("/config", async (req, res) => {
       });
     }
 
+    // Check if business exists and has required WhatsApp configuration
+    const business = await getBusinessWithCredentials(business_id);
+
+    if (!business) {
+      return res.status(404).json({
+        error: "Business not found",
+        message: "Business with the provided ID does not exist",
+      });
+    }
+
+    // Check if business has WhatsApp configuration
+    if (!business.phone_number_id || !business.access_token) {
+      return res.status(400).json({
+        error: "WhatsApp configuration missing",
+        message:
+          "Business must have WhatsApp phone number and access token configured",
+      });
+    }
+
+    // Auto-upload public key if not already uploaded
+    if (!business.public_key_uploaded) {
+      try {
+        console.log(
+          `🔑 Auto-uploading public key for business ${business_id}...`
+        );
+        await uploadPublicKeyToMeta(
+          business_id,
+          business.phone_number_id,
+          business.access_token
+        );
+        console.log(
+          `✅ Public key uploaded successfully for business ${business_id}`
+        );
+      } catch (uploadError) {
+        console.error(
+          `❌ Failed to auto-upload public key for business ${business_id}:`,
+          uploadError
+        );
+        return res.status(500).json({
+          error: "Public key upload failed",
+          message:
+            "Failed to upload public key to Meta. Please check your WhatsApp configuration.",
+          details: uploadError.message,
+        });
+      }
+    }
+
+    // Save flow configuration
     const flow = await Flow.findOneAndUpdate(
       { id: flow_id, business_id },
       {
@@ -114,6 +212,7 @@ router.post("/config", async (req, res) => {
       success: true,
       message: "Configuration saved successfully",
       flow_id,
+      public_key_uploaded: business.public_key_uploaded,
     });
   } catch (error) {
     console.error("Error saving configuration:", error);
@@ -259,5 +358,25 @@ router.post(
     }
   }
 );
+
+// Health check endpoint for Meta Flow requirements
+router.get("/health", (req, res) => {
+  res.json({
+    success: true,
+    message: "Flow Data Endpoint is healthy",
+    timestamp: new Date().toISOString(),
+    version: "1.0.0",
+  });
+});
+
+// Root health check endpoint (alternative path)
+router.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "Flow Data Endpoint is healthy",
+    timestamp: new Date().toISOString(),
+    version: "1.0.0",
+  });
+});
 
 module.exports = router;

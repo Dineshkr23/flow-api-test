@@ -39,6 +39,10 @@ const uploadPublicKeyToMeta = async (
   accessToken
 ) => {
   try {
+    console.log(`🔑 Starting public key upload for business ${businessId}`);
+    console.log(`📱 Phone number ID: ${phoneNumberId}`);
+    console.log(`🔐 Access token: ${accessToken ? "Present" : "Missing"}`);
+
     const business = await Business.findOne({ id: businessId });
     if (!business) {
       throw new Error("Business not found");
@@ -48,19 +52,24 @@ const uploadPublicKeyToMeta = async (
       throw new Error("Business has no public key");
     }
 
+    console.log(`✅ Business found with public key`);
+
     // Upload public key to Meta
-    const response = await axios.post(
-      `https://graph.facebook.com/v18.0/${phoneNumberId}/whatsapp_business_public_key`,
-      {
-        public_key: business.public_key,
+    const metaApiUrl = `https://graph.facebook.com/v23.0/${phoneNumberId}/whatsapp_business_encryption`;
+    console.log(`🌐 Calling Meta API: ${metaApiUrl}`);
+
+    // Use URLSearchParams for form-urlencoded data
+    const params = new URLSearchParams();
+    params.append("business_public_key", business.public_key);
+
+    const response = await axios.post(metaApiUrl, params, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/x-www-form-urlencoded",
       },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    });
+
+    console.log(`✅ Meta API response:`, response.data);
 
     // Update business record
     await Business.findOneAndUpdate(
@@ -73,21 +82,33 @@ const uploadPublicKeyToMeta = async (
       }
     );
 
+    console.log(`✅ Business record updated`);
+
     return {
       success: true,
       message: "Public key uploaded successfully",
       data: response.data,
     };
   } catch (error) {
-    console.error("Error uploading public key:", error);
+    console.error(
+      `❌ Error uploading public key for business ${businessId}:`,
+      error
+    );
+    if (error.response) {
+      console.error(`❌ Meta API Error Response:`, {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+      });
+    }
     throw error;
   }
 };
 
 /**
- * Get business by ID
+ * Get business by ID (safe version - excludes sensitive data)
  * @param {string} businessId - Business ID
- * @returns {Object} Business data
+ * @returns {Object} Business data (without sensitive fields)
  */
 const getBusiness = async (businessId) => {
   try {
@@ -102,6 +123,25 @@ const getBusiness = async (businessId) => {
     return safeBusiness;
   } catch (error) {
     console.error("Error getting business:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get business by ID with sensitive data (for internal use)
+ * @param {string} businessId - Business ID
+ * @returns {Object} Business data (with sensitive fields)
+ */
+const getBusinessWithCredentials = async (businessId) => {
+  try {
+    const business = await Business.findOne({ id: businessId });
+    if (!business) {
+      throw new Error("Business not found");
+    }
+
+    return business.toObject();
+  } catch (error) {
+    console.error("Error getting business with credentials:", error);
     throw error;
   }
 };
@@ -220,6 +260,7 @@ module.exports = {
   createBusiness,
   uploadPublicKeyToMeta,
   getBusiness,
+  getBusinessWithCredentials,
   updateWhatsAppConfig,
   getBusinessPrivateKey,
   getBusinessAppSecret,
