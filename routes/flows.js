@@ -35,6 +35,23 @@ router.post("/data-endpoint", async (req, res) => {
       );
 
       try {
+        // Debug: Check all businesses first
+        const allBusinesses = await Business.find({});
+        console.log(`📊 Total businesses in database: ${allBusinesses.length}`);
+
+        if (allBusinesses.length > 0) {
+          console.log("📋 Business details:");
+          allBusinesses.forEach((business, index) => {
+            console.log(`  ${index + 1}. Business ID: ${business.id}`);
+            console.log(
+              `     - public_key_uploaded: ${business.public_key_uploaded}`
+            );
+            console.log(`     - has access_token: ${!!business.access_token}`);
+            console.log(`     - has private_key: ${!!business.private_key}`);
+            console.log(`     - phone_number_id: ${business.phone_number_id}`);
+          });
+        }
+
         // Get all businesses with public keys uploaded
         const businesses = await Business.find({
           public_key_uploaded: true,
@@ -42,11 +59,64 @@ router.post("/data-endpoint", async (req, res) => {
           private_key: { $exists: true, $ne: null },
         });
 
+        console.log(
+          `🔑 Businesses with uploaded public keys: ${businesses.length}`
+        );
+
         if (businesses.length === 0) {
-          return res.status(500).json({
-            error: "No businesses configured",
-            message: "No businesses found with public keys uploaded",
+          // Fallback: Try to find businesses with at least private_key and access_token
+          console.log(
+            "⚠️ No businesses with full criteria found, trying fallback..."
+          );
+
+          const fallbackBusinesses = await Business.find({
+            private_key: { $exists: true, $ne: null },
+            access_token: { $exists: true, $ne: null },
           });
+
+          console.log(
+            `🔄 Fallback businesses found: ${fallbackBusinesses.length}`
+          );
+
+          if (fallbackBusinesses.length === 0) {
+            // Last resort: Try any business with access_token
+            console.log(
+              "⚠️ No businesses with private_key found, trying access_token only..."
+            );
+
+            const tokenBusinesses = await Business.find({
+              access_token: { $exists: true, $ne: null },
+            });
+
+            console.log(
+              `🔄 Businesses with access_token: ${tokenBusinesses.length}`
+            );
+
+            if (tokenBusinesses.length === 0) {
+              return res.status(500).json({
+                error: "No businesses configured",
+                message: "No businesses found with public keys uploaded",
+                debug: {
+                  total_businesses: allBusinesses.length,
+                  businesses_with_public_keys: businesses.length,
+                  fallback_businesses: fallbackBusinesses.length,
+                  token_businesses: tokenBusinesses.length,
+                },
+              });
+            }
+
+            // Use token-only businesses
+            businesses.push(...tokenBusinesses);
+            console.log(
+              `✅ Using ${tokenBusinesses.length} businesses with access_token for decryption`
+            );
+          } else {
+            // Use fallback businesses
+            businesses.push(...fallbackBusinesses);
+            console.log(
+              `✅ Using ${fallbackBusinesses.length} fallback businesses for decryption`
+            );
+          }
         }
 
         let decryptionSuccessful = false;

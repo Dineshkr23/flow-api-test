@@ -7,7 +7,9 @@ const {
   updateWhatsAppConfig,
   listBusinesses,
   deleteBusiness,
+  regenerateBusinessKeys,
 } = require("../services/businessService");
+const Business = require("../models/Business");
 
 const router = express.Router();
 
@@ -300,6 +302,92 @@ router.get("/:businessId/debug", async (req, res) => {
     console.error("Debug error:", error);
     res.status(500).json({
       error: "Debug failed",
+      message: error.message,
+    });
+  }
+});
+
+// Regenerate keys for a business
+router.post("/:businessId/regenerate-keys", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+
+    console.log(`🔑 Regenerating keys for business: ${businessId}`);
+
+    const updatedBusiness = await regenerateBusinessKeys(businessId);
+
+    res.json({
+      success: true,
+      message: "Keys regenerated successfully",
+      business: {
+        id: updatedBusiness.id,
+        name: updatedBusiness.name,
+        public_key_uploaded: updatedBusiness.public_key_uploaded,
+      },
+    });
+  } catch (error) {
+    console.error("Error regenerating keys:", error);
+    res.status(500).json({
+      error: "Failed to regenerate keys",
+      message: error.message,
+    });
+  }
+});
+
+// Regenerate keys for ALL businesses (utility endpoint)
+router.post("/regenerate-all-keys", async (req, res) => {
+  try {
+    console.log("🔑 Regenerating keys for ALL businesses...");
+
+    // Get all businesses without private keys
+    const businesses = await Business.find({
+      $or: [
+        { private_key: { $exists: false } },
+        { private_key: null },
+        { private_key: "" },
+      ],
+    });
+
+    console.log(
+      `📊 Found ${businesses.length} businesses without private keys`
+    );
+
+    const results = [];
+
+    for (const business of businesses) {
+      try {
+        const updatedBusiness = await regenerateBusinessKeys(business.id);
+        results.push({
+          id: business.id,
+          name: business.name,
+          status: "success",
+        });
+        console.log(
+          `✅ Keys regenerated for: ${business.name} (${business.id})`
+        );
+      } catch (error) {
+        results.push({
+          id: business.id,
+          name: business.name,
+          status: "error",
+          error: error.message,
+        });
+        console.error(
+          `❌ Failed to regenerate keys for: ${business.name} (${business.id}):`,
+          error.message
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Keys regeneration completed for ${businesses.length} businesses`,
+      results: results,
+    });
+  } catch (error) {
+    console.error("Error regenerating all keys:", error);
+    res.status(500).json({
+      error: "Failed to regenerate all keys",
       message: error.message,
     });
   }

@@ -71,14 +71,16 @@ const uploadPublicKeyToMeta = async (
 
     console.log(`✅ Meta API response:`, response.data);
 
-    // Update business record
+    // Update business record - preserve existing fields
     await Business.findOneAndUpdate(
       { id: businessId },
       {
-        public_key_uploaded: true,
-        public_key_uploaded_at: new Date(),
-        phone_number_id: phoneNumberId,
-        access_token: accessToken,
+        $set: {
+          public_key_uploaded: true,
+          public_key_uploaded_at: new Date(),
+          phone_number_id: phoneNumberId,
+          access_token: accessToken,
+        },
       }
     );
 
@@ -221,6 +223,45 @@ const getBusinessAppSecret = async (businessId) => {
 };
 
 /**
+ * Regenerate key pair for an existing business
+ * @param {string} businessId - Business ID
+ * @returns {Object} Updated business with new keys
+ */
+const regenerateBusinessKeys = async (businessId) => {
+  try {
+    console.log(`🔑 Regenerating keys for business: ${businessId}`);
+
+    const business = await Business.findOne({ id: businessId });
+    if (!business) {
+      throw new Error("Business not found");
+    }
+
+    // Generate new key pair
+    const { privateKey, publicKey } = generateKeyPair();
+
+    // Update business with new keys
+    const updatedBusiness = await Business.findOneAndUpdate(
+      { id: businessId },
+      {
+        $set: {
+          private_key: privateKey,
+          public_key: publicKey,
+          public_key_uploaded: false, // Reset upload status since we have new keys
+          public_key_uploaded_at: null,
+        },
+      },
+      { new: true }
+    );
+
+    console.log(`✅ Keys regenerated for business: ${businessId}`);
+    return updatedBusiness;
+  } catch (error) {
+    console.error("Error regenerating business keys:", error);
+    throw error;
+  }
+};
+
+/**
  * List all businesses
  * @param {Object} filters - Filter options
  * @returns {Array} List of businesses
@@ -266,4 +307,5 @@ module.exports = {
   getBusinessAppSecret,
   listBusinesses,
   deleteBusiness,
+  regenerateBusinessKeys,
 };
