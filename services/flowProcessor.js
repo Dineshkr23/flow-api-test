@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const { v4: uuidv4 } = require("uuid");
 const Flow = require("../models/Flow");
 const FlowData = require("../models/FlowData");
@@ -471,9 +472,27 @@ const processEncryptedFlowRequest = async (req, privateKeyPem, appSecret) => {
     const signature = req.headers["x-hub-signature-256"];
     const payload = JSON.stringify(req.body);
 
+    console.log("🔍 Signature validation debug:");
+    console.log(`   - Signature header: ${signature}`);
+    console.log(`   - App secret exists: ${!!appSecret}`);
+    console.log(`   - App secret length: ${appSecret ? appSecret.length : 0}`);
+    console.log(`   - Payload length: ${payload.length}`);
+
+    if (!appSecret) {
+      throw new Error("App secret is missing");
+    }
+
     if (!validateSignature(payload, signature, appSecret)) {
+      console.error("❌ Signature validation failed");
+      console.log(`   - Received signature: ${signature}`);
+      const expectedSignature =
+        "sha256=" +
+        crypto.createHmac("sha256", appSecret).update(payload).digest("hex");
+      console.log(`   - Expected signature: ${expectedSignature}`);
       throw new Error("Invalid signature");
     }
+
+    console.log("✅ Signature validation passed");
 
     // Decrypt the request
     const { encrypted_flow_data, encrypted_aes_key, initial_vector } = req.body;
