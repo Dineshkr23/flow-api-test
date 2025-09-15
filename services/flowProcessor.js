@@ -109,8 +109,8 @@ const handleInitAction = async ({
       screen: "FORM",
       data: {
         data_source: [
-          { id: "US", name: "United States" },
-          { id: "UK", name: "United Kingdom" },
+          { id: "US", title: "United States" },
+          { id: "UK", title: "United Kingdom" },
         ],
       },
     },
