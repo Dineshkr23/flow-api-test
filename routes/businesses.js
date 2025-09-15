@@ -334,6 +334,87 @@ router.post("/:businessId/regenerate-keys", async (req, res) => {
   }
 });
 
+// Debug app secret for a business
+router.get("/:businessId/app-secret", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+
+    const business = await Business.findOne({ id: businessId });
+    if (!business) {
+      return res.status(404).json({
+        error: "Business not found",
+        message: `Business with ID ${businessId} not found`,
+      });
+    }
+
+    res.json({
+      success: true,
+      business: {
+        id: business.id,
+        name: business.name,
+        app_secret: business.app_secret,
+        app_secret_length: business.app_secret ? business.app_secret.length : 0,
+        has_app_secret: !!business.app_secret,
+        access_token: business.access_token ? "***masked***" : null,
+        has_access_token: !!business.access_token,
+      },
+    });
+  } catch (error) {
+    console.error("Error getting app secret:", error);
+    res.status(500).json({
+      error: "Failed to get app secret",
+      message: error.message,
+    });
+  }
+});
+
+// Update app secret for a business
+router.put("/:businessId/app-secret", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { app_secret } = req.body;
+
+    if (!app_secret) {
+      return res.status(400).json({
+        error: "App secret required",
+        message: "app_secret field is required",
+      });
+    }
+
+    console.log(`🔑 Updating app secret for business: ${businessId}`);
+
+    const updatedBusiness = await Business.findOneAndUpdate(
+      { id: businessId },
+      { $set: { app_secret: app_secret } },
+      { new: true }
+    );
+
+    if (!updatedBusiness) {
+      return res.status(404).json({
+        error: "Business not found",
+        message: `Business with ID ${businessId} not found`,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "App secret updated successfully",
+      business: {
+        id: updatedBusiness.id,
+        name: updatedBusiness.name,
+        app_secret_length: updatedBusiness.app_secret.length,
+        has_app_secret: true,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating app secret:", error);
+    res.status(500).json({
+      error: "Failed to update app secret",
+      message: error.message,
+    });
+  }
+});
+
 // Regenerate keys for ALL businesses (utility endpoint)
 router.post("/regenerate-all-keys", async (req, res) => {
   try {
