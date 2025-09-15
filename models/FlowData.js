@@ -25,10 +25,6 @@ const flowDataSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
-  data_type: {
-    type: String,
-    default: "string",
-  },
   created_at: {
     type: Date,
     default: Date.now,

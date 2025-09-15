@@ -338,19 +338,23 @@ const getScreenData = async (flow_token) => {
       flow_token,
     });
     console.log(`Flow Data found:`, flowData);
-    console.log(`Endpoint: ${flowData?.endpoint}`);
-    console.log(`Method: ${flowData?.method}`);
+    console.log(`Endpoint: ${JSON.parse(flowData)?.endpoint}`);
+    console.log(`Method: ${JSON.parse(flowData)?.method}`);
 
     let dataSource = [];
 
-    if (flowData && flowData.endpoint) {
+    if (flowData) {
       try {
-        const apiResponse = await fetch(flowData.endpoint, {
-          method: flowData.method || "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
+        console.log("Fetching API data");
+        const apiResponse = await fetch(
+          "https://dktest.free.beeceptor.com/todos",
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
 
         console.log(`API Response status: ${apiResponse.status}`);
 
