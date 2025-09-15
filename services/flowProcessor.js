@@ -83,6 +83,8 @@ const handleInitAction = async ({
   session_id,
   payload,
 }) => {
+  console.log("🔍 Handling INIT action for screen:", screen);
+  console.log("🔍 Payload:", payload);
   // Create or update session
   const sessionId = session_id || uuidv4();
 
@@ -96,11 +98,23 @@ const handleInitAction = async ({
   // Get screen data based on screen ID
   const screenData = await getScreenData(screen);
 
+  const staticData = {
+    FORM: {
+      screen: "FORM",
+      data: {
+        data_source: [
+          { id: "US", name: "United States" },
+          { id: "UK", name: "United Kingdom" },
+        ],
+      },
+    },
+  };
+
   return {
-    version: "7.2",
-    screen: screen,
-    data: screenData,
-    session_id: sessionId,
+    ...staticData.FORM,
+    data: {
+      ...staticData.FORM.data,
+    },
   };
 };
 
