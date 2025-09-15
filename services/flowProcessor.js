@@ -323,62 +323,101 @@ const getSession = async (sessionId) => {
 
 const getScreenData = async (screenId) => {
   try {
-    // Check if we have cached dropdown options
+    console.log(`🔍 Getting screen data for: ${screenId}`);
+
+    // Check if we have API configuration for this screen
     const flowData = await FlowData.findOne({
       screen_id: screenId,
-      field_name: "dropdown_options",
+      field_name: "api_config",
     });
 
-    let dropdownOptions = [];
+    let dataSource = [];
 
-    if (flowData) {
-      dropdownOptions = JSON.parse(flowData.field_value || "[]");
+    if (flowData && flowData.api_config) {
+      try {
+        const apiConfig = JSON.parse(flowData.api_config);
+        console.log(`📡 Fetching data from API: ${apiConfig.endpoint}`);
 
-      // If we have API configuration and want real-time data, fetch from API
-      if (flowData.api_config) {
-        try {
-          const apiConfig = JSON.parse(flowData.api_config);
-          const apiResponse = await fetch(apiConfig.endpoint, {
-            method: apiConfig.method || "GET",
-            headers: apiConfig.headers || {},
-            ...(apiConfig.body && { body: JSON.stringify(apiConfig.body) }),
+        const apiResponse = await fetch(apiConfig.endpoint, {
+          method: apiConfig.method || "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...apiConfig.headers,
+          },
+          ...(apiConfig.body && { body: JSON.stringify(apiConfig.body) }),
+        });
+
+        if (apiResponse.ok) {
+          const apiData = await apiResponse.json();
+          console.log(`✅ API response received:`, apiData);
+
+          // Transform API data to Meta's dropdown format
+          dataSource = transformApiDataToDropdownOptions(
+            apiData,
+            apiConfig.transform
+          );
+
+          console.log(`🔄 Transformed data source:`, dataSource);
+
+          // Cache the transformed data
+          await FlowData.findOneAndUpdate(
+            {
+              screen_id: screenId,
+              field_name: "data_source",
+            },
+            {
+              field_value: JSON.stringify(dataSource),
+              updated_at: new Date(),
+            },
+            { upsert: true }
+          );
+        } else {
+          console.error(
+            `❌ API request failed: ${apiResponse.status} ${apiResponse.statusText}`
+          );
+          // Use cached data if available
+          const cachedData = await FlowData.findOne({
+            screen_id: screenId,
+            field_name: "data_source",
           });
-
-          if (apiResponse.ok) {
-            const apiData = await apiResponse.json();
-            dropdownOptions = transformApiDataToDropdownOptions(
-              apiData,
-              apiConfig.transform
-            );
-
-            // Update cache with fresh data
-            await FlowData.findOneAndUpdate(
-              {
-                screen_id: screenId,
-                field_name: "dropdown_options",
-              },
-              {
-                field_value: JSON.stringify(dropdownOptions),
-                updated_at: new Date(),
-              }
-            );
+          if (cachedData) {
+            dataSource = JSON.parse(cachedData.field_value || "[]");
           }
-        } catch (apiError) {
-          console.error("Failed to fetch fresh dropdown data:", apiError);
-          // Continue with cached data if API fails
         }
+      } catch (apiError) {
+        console.error("❌ Failed to fetch API data:", apiError);
+        // Use cached data if available
+        const cachedData = await FlowData.findOne({
+          screen_id: screenId,
+          field_name: "data_source",
+        });
+        if (cachedData) {
+          dataSource = JSON.parse(cachedData.field_value || "[]");
+        }
+      }
+    } else {
+      // Check for cached data_source
+      const cachedData = await FlowData.findOne({
+        screen_id: screenId,
+        field_name: "data_source",
+      });
+      if (cachedData) {
+        dataSource = JSON.parse(cachedData.field_value || "[]");
       }
     }
 
-    // Return the dropdown options in the format expected by Meta
-    return {
-      screen_title: `Screen: ${screenId}`,
-      timestamp: new Date().toISOString(),
-      dropdown_options: dropdownOptions,
-      // Add any other dynamic data based on screen ID
-    };
+    // Return data in the format expected by Meta's ${data.data_source} syntax
+    const screenData = {};
+
+    // Only add data_source if we have data
+    if (dataSource.length > 0) {
+      screenData.data_source = dataSource;
+    }
+
+    console.log(`📤 Returning screen data for ${screenId}:`, screenData);
+    return screenData;
   } catch (error) {
-    console.error("Error getting screen data:", error);
+    console.error("❌ Error getting screen data:", error);
     throw error;
   }
 };

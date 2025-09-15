@@ -432,6 +432,28 @@ router.post(
       const { businessId, flowId, screenId } = req.params;
       const { options, apiConfig } = req.body;
 
+      // Store the API configuration separately for the flow data endpoint to use
+      if (apiConfig) {
+        await FlowData.findOneAndUpdate(
+          {
+            business_id: businessId,
+            flow_id: flowId,
+            screen_id: screenId,
+            field_name: "api_config",
+          },
+          {
+            business_id: businessId,
+            flow_id: flowId,
+            screen_id: screenId,
+            field_name: "api_config",
+            api_config: JSON.stringify(apiConfig),
+            updated_at: new Date(),
+          },
+          { upsert: true, new: true }
+        );
+      }
+
+      // Store the dropdown options
       const flowData = await FlowData.findOneAndUpdate(
         {
           business_id: businessId,
@@ -445,7 +467,6 @@ router.post(
           screen_id: screenId,
           field_name: "dropdown_options",
           field_value: JSON.stringify(options),
-          api_config: apiConfig ? JSON.stringify(apiConfig) : null,
           updated_at: new Date(),
         },
         { upsert: true, new: true }
