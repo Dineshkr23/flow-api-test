@@ -141,11 +141,20 @@ const handleBackAction = async ({
   // Get refreshed screen data
   const screenData = await getScreenData(flow_token);
 
+  const staticData = {
+    FORM: {
+      screen: "FORM",
+      data: {
+        data_source: screenData,
+      },
+    },
+  };
+
   return {
-    version: "7.2",
-    screen: screen,
-    data: screenData,
-    session_id: session_id,
+    ...staticData.FORM,
+    data: {
+      ...staticData.FORM.data,
+    },
   };
 };
 
@@ -174,42 +183,58 @@ const handleDataExchangeAction = async ({
   // Get screen data including dropdown options
   const screenData = await getScreenData(flow_token);
 
+  const staticData = {
+    FORM: {
+      screen: "FORM",
+      data: {
+        data_source: screenData,
+      },
+    },
+  };
+
+  return {
+    ...staticData.FORM,
+    data: {
+      ...staticData.FORM.data,
+    },
+  };
+
   // Process the data exchange logic
-  const processedData = await processDataExchange({
-    screen,
-    payload,
-    session_id,
-  });
+  // const processedData = await processDataExchange({
+  //   screen,
+  //   payload,
+  //   session_id,
+  // });
 
-  // Determine next screen based on business logic
-  const nextScreen = await determineNextScreen({
-    currentScreen: screen,
-    payload,
-    session_id,
-  });
+  // // Determine next screen based on business logic
+  // const nextScreen = await determineNextScreen({
+  //   currentScreen: screen,
+  //   payload,
+  //   session_id,
+  // });
 
-  if (nextScreen) {
-    return {
-      version: "7.2",
-      screen: nextScreen,
-      data: {
-        ...processedData,
-        ...screenData, // Include dropdown options and other screen data
-      },
-      session_id: session_id,
-    };
-  } else {
-    // Complete the flow
-    return {
-      version: "7.2",
-      screen: "SUCCESS",
-      data: {
-        ...processedData,
-        ...screenData, // Include dropdown options and other screen data
-      },
-      session_id: session_id,
-    };
-  }
+  // if (nextScreen) {
+  //   return {
+  //     version: "7.2",
+  //     screen: nextScreen,
+  //     data: {
+  //       ...processedData,
+  //       ...screenData, // Include dropdown options and other screen data
+  //     },
+  //     session_id: session_id,
+  //   };
+  // } else {
+  //   // Complete the flow
+  //   return {
+  //     version: "7.2",
+  //     screen: "SUCCESS",
+  //     data: {
+  //       ...processedData,
+  //       ...screenData, // Include dropdown options and other screen data
+  //     },
+  //     session_id: session_id,
+  //   };
+  // }
 };
 
 /**
