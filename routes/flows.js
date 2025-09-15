@@ -181,6 +181,15 @@ router.post("/data-endpoint", async (req, res) => {
           `🎯 Successfully processed request for business: ${successfulBusiness.id}`
         );
 
+        // Check if we have a valid encrypted response
+        if (!encryptedResponse) {
+          console.error("❌ Encrypted response is null or undefined");
+          return res.status(500).json({
+            error: "Encryption failed",
+            message: "Failed to encrypt response",
+          });
+        }
+
         // Send encrypted response as plain text (not JSON)
         res.set("Content-Type", "text/plain");
         res.set("Content-Length", encryptedResponse.length.toString());

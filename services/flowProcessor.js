@@ -535,6 +535,11 @@ const processEncryptedFlowRequest = async (
     console.log("🔐 Encrypted response type:", typeof encryptedResponse);
     console.log("🔐 Encrypted response length:", encryptedResponse.length);
 
+    if (!encryptedResponse) {
+      throw new Error("Encrypted response is null or undefined");
+    }
+
+    console.log("✅ Returning encrypted response successfully");
     return encryptedResponse;
   } catch (error) {
     console.error("Error processing encrypted flow request:", error);
