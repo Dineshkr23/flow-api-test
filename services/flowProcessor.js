@@ -91,27 +91,15 @@ const handleInitAction = async ({
 }) => {
   console.log("🔍 Handling INIT action for screen:", screen);
   console.log("🔍 Payload:", payload);
-  // Create or update session
-  const sessionId = session_id || uuidv4();
-
-  await createOrUpdateSession({
-    sessionId,
-    flow_token,
-    current_screen: screen,
-    session_data: JSON.stringify(payload || {}),
-  });
 
   // Get screen data based on screen ID
-  const screenData = await getScreenData(screen);
+  const screenData = await getScreenData(flow_token);
 
   const staticData = {
     FORM: {
       screen: "FORM",
       data: {
-        data_source: [
-          { id: "US", title: "15/09/2025" },
-          { id: "UK", title: "16/09/2025" },
-        ],
+        data_source: screenData,
       },
     },
   };
@@ -341,101 +329,46 @@ const getSession = async (sessionId) => {
   }
 };
 
-const getScreenData = async (screenId) => {
+const getScreenData = async (flow_token) => {
   try {
-    console.log(`🔍 Getting screen data for: ${screenId}`);
+    console.log(`🔍 Getting screen data for: ${flow_token}`);
 
     // Check if we have API configuration for this screen
     const flowData = await FlowData.findOne({
-      screen_id: screenId,
-      field_name: "api_config",
+      flow_token,
     });
 
     let dataSource = [];
 
-    if (flowData && flowData.api_config) {
+    if (flowData) {
       try {
-        const apiConfig = JSON.parse(flowData.api_config);
-        console.log(`📡 Fetching data from API: ${apiConfig.endpoint}`);
+        console.log(`Flow Data found: ${flowData}`);
 
-        const apiResponse = await fetch(apiConfig.endpoint, {
-          method: apiConfig.method || "GET",
+        const apiResponse = await fetch(flowData.endpoint, {
+          method: flowData.method,
           headers: {
             "Content-Type": "application/json",
-            ...apiConfig.headers,
           },
-          ...(apiConfig.body && { body: JSON.stringify(apiConfig.body) }),
         });
+        console.log("apiResponse", apiResponse.data);
 
         if (apiResponse.ok) {
-          const apiData = await apiResponse.json();
-          console.log(`✅ API response received:`, apiData);
-
-          // Transform API data to Meta's dropdown format
-          dataSource = transformApiDataToDropdownOptions(
-            apiData,
-            apiConfig.transform
-          );
-
-          console.log(`🔄 Transformed data source:`, dataSource);
-
-          // Cache the transformed data
-          await FlowData.findOneAndUpdate(
-            {
-              screen_id: screenId,
-              field_name: "data_source",
-            },
-            {
-              field_value: JSON.stringify(dataSource),
-              updated_at: new Date(),
-            },
-            { upsert: true }
-          );
+          dataSource.push(...apiResponse.data);
+          console.log(`✅ API response received:`, apiResponse.data);
         } else {
           console.error(
             `❌ API request failed: ${apiResponse.status} ${apiResponse.statusText}`
           );
-          // Use cached data if available
-          const cachedData = await FlowData.findOne({
-            screen_id: screenId,
-            field_name: "data_source",
-          });
-          if (cachedData) {
-            dataSource = JSON.parse(cachedData.field_value || "[]");
-          }
         }
       } catch (apiError) {
         console.error("❌ Failed to fetch API data:", apiError);
-        // Use cached data if available
-        const cachedData = await FlowData.findOne({
-          screen_id: screenId,
-          field_name: "data_source",
-        });
-        if (cachedData) {
-          dataSource = JSON.parse(cachedData.field_value || "[]");
-        }
       }
     } else {
-      // Check for cached data_source
-      const cachedData = await FlowData.findOne({
-        screen_id: screenId,
-        field_name: "data_source",
-      });
-      if (cachedData) {
-        dataSource = JSON.parse(cachedData.field_value || "[]");
-      }
+      console.log("No flow data found");
     }
 
-    // Return data in the format expected by Meta's ${data.data_source} syntax
-    const screenData = {};
-
-    // Only add data_source if we have data
-    if (dataSource.length > 0) {
-      screenData.data_source = dataSource;
-    }
-
-    console.log(`📤 Returning screen data for ${screenId}:`, screenData);
-    return screenData;
+    console.log(`📤 Returning screen data for ${flow_token}:`, dataSource);
+    return dataSource;
   } catch (error) {
     console.error("❌ Error getting screen data:", error);
     throw error;
