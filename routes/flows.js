@@ -4,6 +4,7 @@ const {
   processEncryptedFlowRequest,
   validateFlowRequest,
 } = require("../services/flowProcessor");
+const { FlowEndpointException } = require("../utils/encryption");
 const {
   getBusinessPrivateKey,
   getBusinessAppSecret,
@@ -133,7 +134,8 @@ router.post("/data-endpoint", async (req, res) => {
             const encryptedResponse = await processEncryptedFlowRequest(
               req,
               business.private_key,
-              business.app_secret
+              business.app_secret,
+              business.private_key_passphrase || ""
             );
 
             decryptionSuccessful = true;
@@ -147,6 +149,15 @@ router.post("/data-endpoint", async (req, res) => {
               `❌ Failed to decrypt with business ${business.id}:`,
               decryptError.message
             );
+
+            // If it's a FlowEndpointException, return the proper HTTP status
+            if (decryptError instanceof FlowEndpointException) {
+              console.log(
+                `🔑 Returning HTTP ${decryptError.statusCode} for business ${business.id}`
+              );
+              return res.status(decryptError.statusCode).send();
+            }
+
             continue;
           }
         }

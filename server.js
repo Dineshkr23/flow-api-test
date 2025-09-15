@@ -28,7 +28,15 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 app.use(cors());
 app.use(morgan("combined"));
-app.use(express.json({ limit: "10mb" }));
+app.use(
+  express.json({
+    limit: "10mb",
+    // Store the raw request body to use it for signature verification
+    verify: (req, res, buf, encoding) => {
+      req.rawBody = buf?.toString(encoding || "utf8");
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 
 // Routes

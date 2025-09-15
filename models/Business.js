@@ -37,6 +37,10 @@ const businessSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
+  private_key_passphrase: {
+    type: String,
+    required: false,
+  },
   public_key_uploaded: {
     type: Boolean,
     default: false,

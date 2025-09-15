@@ -1,127 +1,205 @@
+/**
+ * Meta WhatsApp Flow Data Endpoint Encryption Utilities
+ * Based on Meta's official implementation
+ */
+
 const crypto = require("crypto");
-const NodeRSA = require("node-rsa");
 
 /**
- * Decrypt Meta Flow Data Endpoint request
- * @param {string} encryptedFlowData - Base64 encoded encrypted flow data
- * @param {string} encryptedAesKey - Base64 encoded encrypted AES key
- * @param {string} initialVector - Base64 encoded initial vector
- * @param {string} privateKeyPem - Private key in PEM format
- * @returns {Object} Decrypted payload
+ * FlowEndpointException class for proper error handling
  */
-const decryptFlowRequest = (
-  encryptedFlowData,
-  encryptedAesKey,
-  initialVector,
-  privateKeyPem
-) => {
-  try {
-    // Step 1: Decrypt the AES key using RSA
-    const key = new NodeRSA(privateKeyPem);
-    key.setOptions({ encryptionScheme: "pkcs1_oaep" });
-
-    const aesKeyBuffer = Buffer.from(encryptedAesKey, "base64");
-    const decryptedAesKey = key.decrypt(aesKeyBuffer);
-
-    // Step 2: Decrypt the flow data using AES-GCM
-    const iv = Buffer.from(initialVector, "base64");
-    const encryptedData = Buffer.from(encryptedFlowData, "base64");
-
-    // Split encrypted data and authentication tag
-    const authTag = encryptedData.slice(-16); // Last 16 bytes
-    const ciphertext = encryptedData.slice(0, -16); // Everything except last 16 bytes
-
-    // Create decipher
-    const decipher = crypto.createDecipherGCM("aes-128-gcm");
-    decipher.setAuthTag(authTag);
-    decipher.setAAD(Buffer.alloc(0)); // Empty AAD
-
-    // Decrypt
-    let decrypted = decipher.update(ciphertext, null, "utf8");
-    decrypted += decipher.final("utf8");
-
-    return JSON.parse(decrypted);
-  } catch (error) {
-    console.error("Decryption error:", error);
-    throw new Error("Failed to decrypt flow request");
+class FlowEndpointException extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = this.constructor.name;
+    this.statusCode = statusCode;
   }
-};
+}
 
 /**
- * Encrypt Meta Flow Data Endpoint response
- * @param {Object} payload - Response payload to encrypt
- * @param {Buffer} aesKey - AES key from request
- * @param {Buffer} requestIv - Initial vector from request
- * @returns {string} Base64 encoded encrypted response
+ * Decrypt Meta Flow request using RSA and AES-GCM (Meta's official implementation)
+ * @param {Object} body - Request body with encrypted data
+ * @param {string} privateKeyPem - RSA private key in PEM format
+ * @param {string} passphrase - Passphrase for private key (empty string if none)
+ * @returns {Object} Decrypted request with aesKeyBuffer and initialVectorBuffer
  */
-const encryptFlowResponse = (payload, aesKey, requestIv) => {
+const decryptRequest = (body, privateKeyPem, passphrase = "") => {
+  const { encrypted_aes_key, encrypted_flow_data, initial_vector } = body;
+
+  const privateKey = crypto.createPrivateKey({
+    key: privateKeyPem,
+    passphrase,
+  });
+  let decryptedAesKey = null;
+
   try {
-    // Invert all bits of the request IV for response encryption
-    const responseIv = Buffer.alloc(16);
-    for (let i = 0; i < 16; i++) {
-      responseIv[i] = ~requestIv[i];
-    }
-
-    // Create cipher
-    const cipher = crypto.createCipherGCM("aes-128-gcm");
-    cipher.setAAD(Buffer.alloc(0)); // Empty AAD
-
-    // Encrypt
-    let encrypted = cipher.update(JSON.stringify(payload), "utf8");
-    encrypted += cipher.final();
-
-    // Get authentication tag
-    const authTag = cipher.getAuthTag();
-
-    // Combine encrypted data and auth tag
-    const combined = Buffer.concat([encrypted, authTag]);
-
-    return combined.toString("base64");
+    // Decrypt AES key created by client
+    decryptedAesKey = crypto.privateDecrypt(
+      {
+        key: privateKey,
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: "sha256",
+      },
+      Buffer.from(encrypted_aes_key, "base64")
+    );
   } catch (error) {
-    console.error("Encryption error:", error);
-    throw new Error("Failed to encrypt flow response");
+    console.error("Failed to decrypt AES key:", error);
+    /*
+    Failed to decrypt. Please verify your private key.
+    If you change your public key. You need to return HTTP status code 421 to refresh the public key on the client
+    */
+    throw new FlowEndpointException(
+      421,
+      "Failed to decrypt the request. Please verify your private key."
+    );
   }
-};
 
-/**
- * Generate RSA key pair for Flow Data Endpoint
- * @returns {Object} Object containing private and public keys
- */
-const generateKeyPair = () => {
-  const key = new NodeRSA({ b: 2048 });
+  // Decrypt flow data
+  const flowDataBuffer = Buffer.from(encrypted_flow_data, "base64");
+  const initialVectorBuffer = Buffer.from(initial_vector, "base64");
+
+  const TAG_LENGTH = 16;
+  const encrypted_flow_data_body = flowDataBuffer.subarray(0, -TAG_LENGTH);
+  const encrypted_flow_data_tag = flowDataBuffer.subarray(-TAG_LENGTH);
+
+  const decipher = crypto.createDecipheriv(
+    "aes-128-gcm",
+    decryptedAesKey,
+    initialVectorBuffer
+  );
+  decipher.setAuthTag(encrypted_flow_data_tag);
+
+  const decryptedJSONString = Buffer.concat([
+    decipher.update(encrypted_flow_data_body),
+    decipher.final(),
+  ]).toString("utf-8");
 
   return {
-    privateKey: key.exportKey("private"),
-    publicKey: key.exportKey("public"),
+    decryptedBody: JSON.parse(decryptedJSONString),
+    aesKeyBuffer: decryptedAesKey,
+    initialVectorBuffer,
   };
 };
 
 /**
- * Validate request signature using app secret
- * @param {string} payload - Request payload
+ * Encrypt Meta Flow response using AES-GCM (Meta's official implementation)
+ * @param {Object} response - Response data to encrypt
+ * @param {Buffer} aesKeyBuffer - AES key buffer from request
+ * @param {Buffer} initialVectorBuffer - Initialization vector buffer from request
+ * @returns {string} Base64 encrypted response
+ */
+const encryptResponse = (response, aesKeyBuffer, initialVectorBuffer) => {
+  // Flip initial vector
+  const flipped_iv = [];
+  for (const pair of initialVectorBuffer.entries()) {
+    flipped_iv.push(~pair[1]);
+  }
+
+  // Encrypt response data
+  const cipher = crypto.createCipheriv(
+    "aes-128-gcm",
+    aesKeyBuffer,
+    Buffer.from(flipped_iv)
+  );
+
+  return Buffer.concat([
+    cipher.update(JSON.stringify(response), "utf-8"),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ]).toString("base64");
+};
+
+/**
+ * Generate RSA key pair with passphrase (Meta's official implementation)
+ * @param {string} passphrase - Passphrase for private key encryption
+ * @returns {Object} Key pair with private and public keys
+ */
+const generateKeyPair = (passphrase = "") => {
+  try {
+    const keyPair = crypto.generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: {
+        type: "spki",
+        format: "pem",
+      },
+      privateKeyEncoding: {
+        type: "pkcs1",
+        format: "pem",
+        cipher: "des-ede3-cbc",
+        passphrase,
+      },
+    });
+
+    return {
+      privateKey: keyPair.privateKey,
+      publicKey: keyPair.publicKey,
+    };
+  } catch (error) {
+    console.error("Error generating key pair:", error);
+    throw new Error(`Failed to generate key pair: ${error.message}`);
+  }
+};
+
+/**
+ * Validate request signature using app secret (Meta's official implementation)
+ * @param {Buffer} rawBody - Raw request body buffer
  * @param {string} signature - X-Hub-Signature-256 header value
  * @param {string} appSecret - App secret for validation
  * @returns {boolean} True if signature is valid
  */
-const validateSignature = (payload, signature, appSecret) => {
+const validateSignature = (rawBody, signature, appSecret) => {
   try {
-    const expectedSignature =
-      "sha256=" +
-      crypto.createHmac("sha256", appSecret).update(payload).digest("hex");
+    if (!appSecret) {
+      console.warn("App Secret is not set up. Skipping signature validation.");
+      return true;
+    }
 
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
+    const signatureHeader = signature;
+    const signatureBuffer = Buffer.from(
+      signatureHeader.replace("sha256=", ""),
+      "utf-8"
     );
+
+    const hmac = crypto.createHmac("sha256", appSecret);
+    const digestString = hmac.update(rawBody).digest("hex");
+    const digestBuffer = Buffer.from(digestString, "utf-8");
+
+    if (!crypto.timingSafeEqual(digestBuffer, signatureBuffer)) {
+      console.error("Error: Request Signature did not match");
+      return false;
+    }
+
+    return true;
   } catch (error) {
     console.error("Signature validation error:", error);
     return false;
   }
 };
 
+// Legacy function names for backward compatibility
+const decryptFlowRequest = (
+  encryptedFlowData,
+  encryptedAesKey,
+  initialVector,
+  privateKeyPem,
+  passphrase = ""
+) => {
+  const body = {
+    encrypted_aes_key: encryptedAesKey,
+    encrypted_flow_data: encryptedFlowData,
+    initial_vector: initialVector,
+  };
+  return decryptRequest(body, privateKeyPem, passphrase);
+};
+
+const encryptFlowResponse = encryptResponse;
+
 module.exports = {
+  decryptRequest,
+  encryptResponse,
   decryptFlowRequest,
   encryptFlowResponse,
   generateKeyPair,
   validateSignature,
+  FlowEndpointException,
 };

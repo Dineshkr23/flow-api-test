@@ -5,9 +5,10 @@ const FlowData = require("../models/FlowData");
 const FlowSession = require("../models/FlowSession");
 const FlowResponse = require("../models/FlowResponse");
 const {
-  decryptFlowRequest,
-  encryptFlowResponse,
+  decryptRequest,
+  encryptResponse,
   validateSignature,
+  FlowEndpointException,
 } = require("../utils/encryption");
 
 /**
@@ -466,32 +467,33 @@ const determineNextScreen = async ({ currentScreen, payload, session_id }) => {
  * @param {string} appSecret - App secret for signature validation
  * @returns {Object} Decrypted and processed response
  */
-const processEncryptedFlowRequest = async (req, privateKeyPem, appSecret) => {
+const processEncryptedFlowRequest = async (
+  req,
+  privateKeyPem,
+  appSecret,
+  passphrase = ""
+) => {
   try {
-    // Validate signature
+    // Validate signature using raw body (Meta's official implementation)
     const signature = req.headers["x-hub-signature-256"];
-    const payload = JSON.stringify(req.body);
+    const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body));
 
     console.log("🔍 Signature validation debug:");
     console.log(`   - Signature header: ${signature}`);
     console.log(`   - App secret exists: ${!!appSecret}`);
     console.log(`   - App secret length: ${appSecret ? appSecret.length : 0}`);
-    console.log(`   - Payload length: ${payload.length}`);
-
-    if (!appSecret) {
-      throw new Error("App secret is missing");
-    }
+    console.log(`   - Raw body length: ${rawBody.length}`);
 
     // TEMPORARY: Skip signature validation for testing
     // TODO: Fix app secret mismatch issue
     console.log("⚠️ TEMPORARILY SKIPPING SIGNATURE VALIDATION FOR TESTING");
 
-    if (!validateSignature(payload, signature, appSecret)) {
+    if (!validateSignature(rawBody, signature, appSecret)) {
       console.error("❌ Signature validation failed");
       console.log(`   - Received signature: ${signature}`);
       const expectedSignature =
         "sha256=" +
-        crypto.createHmac("sha256", appSecret).update(payload).digest("hex");
+        crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex");
       console.log(`   - Expected signature: ${expectedSignature}`);
       console.log("⚠️ PROCEEDING WITHOUT SIGNATURE VALIDATION FOR TESTING");
       // throw new Error("Invalid signature"); // Commented out for testing
@@ -499,24 +501,31 @@ const processEncryptedFlowRequest = async (req, privateKeyPem, appSecret) => {
       console.log("✅ Signature validation passed");
     }
 
-    // Decrypt the request
-    const { encrypted_flow_data, encrypted_aes_key, initial_vector } = req.body;
+    // Decrypt the request using Meta's official implementation
+    let decryptedRequest = null;
+    try {
+      decryptedRequest = decryptRequest(req.body, privateKeyPem, passphrase);
+    } catch (err) {
+      console.error("Decryption failed:", err);
+      if (err instanceof FlowEndpointException) {
+        throw err; // This will be handled by the caller to return proper HTTP status
+      }
+      throw new Error("Decryption failed");
+    }
 
-    const decryptedPayload = decryptFlowRequest(
-      encrypted_flow_data,
-      encrypted_aes_key,
-      initial_vector,
-      privateKeyPem
-    );
+    const { aesKeyBuffer, initialVectorBuffer, decryptedBody } =
+      decryptedRequest;
+    console.log("💬 Decrypted Request:", decryptedBody);
 
     // Process the flow action
-    const result = await processFlowAction(decryptedPayload);
+    const result = await processFlowAction(decryptedBody);
 
-    // Encrypt the response
-    const aesKey = Buffer.from(encrypted_aes_key, "base64");
-    const iv = Buffer.from(initial_vector, "base64");
-
-    const encryptedResponse = encryptFlowResponse(result, aesKey, iv);
+    // Encrypt the response using Meta's official implementation
+    const encryptedResponse = encryptResponse(
+      result,
+      aesKeyBuffer,
+      initialVectorBuffer
+    );
 
     return encryptedResponse;
   } catch (error) {

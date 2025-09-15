@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const Business = require("../models/Business");
 const { generateKeyPair } = require("../utils/encryption");
 const axios = require("axios");
@@ -9,13 +10,17 @@ const axios = require("axios");
  */
 const createBusiness = async (businessData) => {
   try {
-    // Generate RSA key pair for this business
-    const { privateKey, publicKey } = generateKeyPair();
+    // Generate a random passphrase for the private key
+    const passphrase = crypto.randomBytes(32).toString("hex");
+
+    // Generate RSA key pair for this business with passphrase
+    const { privateKey, publicKey } = generateKeyPair(passphrase);
 
     const business = new Business({
       ...businessData,
       public_key: publicKey,
-      private_key: privateKey, // Store temporarily for upload
+      private_key: privateKey,
+      private_key_passphrase: passphrase, // Store passphrase for decryption
     });
 
     await business.save();
@@ -236,8 +241,11 @@ const regenerateBusinessKeys = async (businessId) => {
       throw new Error("Business not found");
     }
 
-    // Generate new key pair
-    const { privateKey, publicKey } = generateKeyPair();
+    // Generate a random passphrase for the private key
+    const passphrase = crypto.randomBytes(32).toString("hex");
+
+    // Generate new key pair with passphrase
+    const { privateKey, publicKey } = generateKeyPair(passphrase);
 
     // Update business with new keys
     const updatedBusiness = await Business.findOneAndUpdate(
@@ -245,6 +253,7 @@ const regenerateBusinessKeys = async (businessId) => {
       {
         $set: {
           private_key: privateKey,
+          private_key_passphrase: passphrase,
           public_key: publicKey,
           public_key_uploaded: false, // Reset upload status since we have new keys
           public_key_uploaded_at: null,
