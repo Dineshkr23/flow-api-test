@@ -139,7 +139,7 @@ const handleBackAction = async ({
   });
 
   // Get refreshed screen data
-  const screenData = await getScreenData(screen);
+  const screenData = await getScreenData(flow_token);
 
   return {
     version: "7.2",
@@ -172,7 +172,7 @@ const handleDataExchangeAction = async ({
   }
 
   // Get screen data including dropdown options
-  const screenData = await getScreenData(screen);
+  const screenData = await getScreenData(flow_token);
 
   // Process the data exchange logic
   const processedData = await processDataExchange({
@@ -337,24 +337,38 @@ const getScreenData = async (flow_token) => {
     const flowData = await FlowData.findOne({
       flow_token,
     });
+    console.log(`Flow Data found:`, flowData);
+    console.log(`Endpoint: ${flowData?.endpoint}`);
+    console.log(`Method: ${flowData?.method}`);
 
     let dataSource = [];
 
-    if (flowData) {
+    if (flowData && flowData.endpoint) {
       try {
-        console.log(`Flow Data found: ${flowData}`);
-
         const apiResponse = await fetch(flowData.endpoint, {
-          method: flowData.method,
+          method: flowData.method || "GET",
           headers: {
             "Content-Type": "application/json",
           },
         });
-        console.log("apiResponse", apiResponse.data);
+
+        console.log(`API Response status: ${apiResponse.status}`);
 
         if (apiResponse.ok) {
-          dataSource.push(...apiResponse.data);
-          console.log(`✅ API response received:`, apiResponse.data);
+          const responseData = await apiResponse.json();
+          console.log(`✅ API response received:`, responseData);
+
+          // Handle different response formats
+          if (Array.isArray(responseData)) {
+            dataSource.push(...responseData);
+          } else if (responseData.data && Array.isArray(responseData.data)) {
+            dataSource.push(...responseData.data);
+          } else if (responseData.items && Array.isArray(responseData.items)) {
+            dataSource.push(...responseData.items);
+          } else {
+            // If it's a single object, wrap it in an array
+            dataSource.push(responseData);
+          }
         } else {
           console.error(
             `❌ API request failed: ${apiResponse.status} ${apiResponse.statusText}`
@@ -364,7 +378,7 @@ const getScreenData = async (flow_token) => {
         console.error("❌ Failed to fetch API data:", apiError);
       }
     } else {
-      console.log("No flow data found");
+      console.log("No flow data found or endpoint is missing");
     }
 
     console.log(`📤 Returning screen data for ${flow_token}:`, dataSource);
