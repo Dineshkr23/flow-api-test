@@ -28,6 +28,12 @@ const processFlowAction = async ({
   session_id,
   payload,
 }) => {
+  console.log("🔍 Processing flow action:", action);
+  console.log("🔍 Screen:", screen);
+  console.log("🔍 Flow token:", flow_token);
+  console.log("🔍 Session ID:", session_id);
+  console.log("🔍 Payload:", payload);
+
   try {
     switch (action) {
       case "INIT":
