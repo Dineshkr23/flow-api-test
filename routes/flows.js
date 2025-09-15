@@ -137,7 +137,7 @@ router.post("/data-endpoint", async (req, res) => {
               `🔑 Attempting decryption with business: ${business.id}`
             );
 
-            const encryptedResponse = await processEncryptedFlowRequest(
+            encryptedResponse = await processEncryptedFlowRequest(
               req,
               business.private_key,
               business.app_secret,
