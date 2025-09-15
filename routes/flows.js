@@ -23,6 +23,12 @@ const router = express.Router();
 // Main Data Endpoint - This is what Meta will call
 router.post("/data-endpoint", async (req, res) => {
   try {
+    // Debug: Check request body structure
+    console.log("🔍 Request body keys:", Object.keys(req.body));
+    console.log("🔍 Has encrypted_flow_data:", !!req.body.encrypted_flow_data);
+    console.log("🔍 Has encrypted_aes_key:", !!req.body.encrypted_aes_key);
+    console.log("🔍 Has initial_vector:", !!req.body.initial_vector);
+
     // Check if this is an encrypted request from Meta
     if (
       req.body.encrypted_flow_data &&
@@ -177,6 +183,9 @@ router.post("/data-endpoint", async (req, res) => {
 
         // Send encrypted response as plain text (not JSON)
         res.set("Content-Type", "text/plain");
+        res.set("Content-Length", encryptedResponse.length.toString());
+        console.log("📤 Sending response with Content-Type: text/plain");
+        console.log("📤 Response length:", encryptedResponse.length);
         res.send(encryptedResponse);
       } catch (error) {
         console.error("Error processing encrypted request:", error);
@@ -187,6 +196,10 @@ router.post("/data-endpoint", async (req, res) => {
       }
     } else {
       // Unencrypted request (for testing)
+      console.log(
+        "⚠️ Taking UNENCRYPTED request path - this returns JSON instead of Base64!"
+      );
+      console.log("⚠️ Request body:", req.body);
       const { action, screen, flow_token, session_id, payload } = req.body;
 
       // Validate request
