@@ -415,6 +415,88 @@ router.put("/:businessId/app-secret", async (req, res) => {
   }
 });
 
+// Upload public key to Meta for a business
+router.post("/:businessId/upload-public-key", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+
+    console.log(`🔑 Uploading public key for business: ${businessId}`);
+
+    const business = await Business.findOne({ id: businessId });
+    if (!business) {
+      return res.status(404).json({
+        error: "Business not found",
+        message: `Business with ID ${businessId} not found`,
+      });
+    }
+
+    if (!business.public_key) {
+      return res.status(400).json({
+        error: "No public key",
+        message: "Business has no public key to upload",
+      });
+    }
+
+    if (!business.access_token || !business.phone_number_id) {
+      return res.status(400).json({
+        error: "Missing WhatsApp config",
+        message: "Business needs access_token and phone_number_id",
+      });
+    }
+
+    // Upload public key to Meta
+    const metaUrl = `https://graph.facebook.com/v23.0/${business.phone_number_id}/whatsapp_business_encryption`;
+
+    console.log(`🚀 Uploading to Meta URL: ${metaUrl}`);
+
+    const axios = require("axios");
+    const response = await axios.post(
+      metaUrl,
+      `business_public_key=${encodeURIComponent(business.public_key)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${business.access_token}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
+
+    console.log(`✅ Meta response:`, response.data);
+
+    // Update business record
+    await Business.findOneAndUpdate(
+      { id: businessId },
+      {
+        $set: {
+          public_key_uploaded: true,
+          public_key_uploaded_at: new Date(),
+        },
+      }
+    );
+
+    res.json({
+      success: true,
+      message: "Public key uploaded to Meta successfully",
+      metaResponse: response.data,
+      business: {
+        id: business.id,
+        name: business.name,
+        public_key_uploaded: true,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Error uploading public key:",
+      error.response?.data || error.message
+    );
+    res.status(500).json({
+      error: "Failed to upload public key",
+      message: error.response?.data?.error?.message || error.message,
+      details: error.response?.data,
+    });
+  }
+});
+
 // Regenerate keys for ALL businesses (utility endpoint)
 router.post("/regenerate-all-keys", async (req, res) => {
   try {

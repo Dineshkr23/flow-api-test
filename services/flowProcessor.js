@@ -519,6 +519,7 @@ const processEncryptedFlowRequest = async (
 
     // Process the flow action
     const result = await processFlowAction(decryptedBody);
+    console.log("🔄 Processing result:", result);
 
     // Encrypt the response using Meta's official implementation
     const encryptedResponse = encryptResponse(
@@ -526,6 +527,13 @@ const processEncryptedFlowRequest = async (
       aesKeyBuffer,
       initialVectorBuffer
     );
+
+    console.log(
+      "🔐 Encrypted response (first 100 chars):",
+      encryptedResponse.substring(0, 100)
+    );
+    console.log("🔐 Encrypted response type:", typeof encryptedResponse);
+    console.log("🔐 Encrypted response length:", encryptedResponse.length);
 
     return encryptedResponse;
   } catch (error) {
